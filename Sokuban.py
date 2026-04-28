@@ -324,12 +324,6 @@ def main():
             return map_from_file(args.map_path)
         return packed_levels[current_level_index]
 
-    # pygame.init()
-    # pygame.display.set_caption("Sokoban")
-    # font = pygame.font.SysFont("arial", 18)
-    # clock = pygame.time.Clock()
-    # textures = build_textures(TILE_SIZE)
-
     pygame.init()
     pygame.display.set_caption("Sokoban")
     font = pygame.font.SysFont("arial", 18)
