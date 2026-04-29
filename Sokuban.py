@@ -2,12 +2,12 @@ import argparse
 import random
 import re
 import sys
-from pathlib import *
+from pathlib import Path
 
 import pygame
 
 # Map symbols:
-# # = wall, ' ' = floor, . = target, $ = box, * = box on target, @ = player, + = player on target
+# # = wall, ' ' = floor, . = target, $ = box, * = box on target, @ = p1, + = p1 on target
 DEFAULT_LEVEL = [
     "##########",
     "#        #",
@@ -41,12 +41,12 @@ COLORS = {
     "box": (170, 110, 60),
     "box_edge": (115, 70, 35),
     "box_on_target": (100, 170, 90),
-    "player": (80, 165, 230),
+    "p1": (80, 165, 230),
     "text": (235, 235, 240),
 }
 
 
-def build_textures(tile_size):
+def wallkins(tile_size):
     textures = {}
 
     floor = pygame.Surface((tile_size, tile_size))
@@ -57,7 +57,7 @@ def build_textures(tile_size):
         pygame.draw.line(floor, (48, 48, 66), (x, 0), (x, tile_size), 1)
     textures["floor"] = floor
 
-    wall_variants = []
+    wallkins2 = []
     for base in ((92, 97, 118), (84, 90, 112), (73, 95, 92), (104, 86, 92)):
         s = pygame.Surface((tile_size, tile_size))
         s.fill(base)
@@ -71,24 +71,24 @@ def build_textures(tile_size):
             pygame.draw.rect(s, tint, (x, y, w, h))
         for y in range(0, tile_size, 10):
             pygame.draw.line(s, (60, 65, 78), (0, y), (tile_size, y), 1)
-        wall_variants.append(s)
-    textures["walls"] = wall_variants
+        wallkins2.append(s)
+    textures["wall"] = wallkins2
 
-    box_materials = []
+    boxskins = []
 
     wood = pygame.Surface((tile_size - 8, tile_size - 8))
     wood.fill((170, 112, 66))
     for i in range(4, tile_size - 8, 6):
         pygame.draw.line(wood, (130, 82, 46), (2, i), (tile_size - 10, i), 1)
     pygame.draw.rect(wood, (110, 70, 38), wood.get_rect(), 2)
-    box_materials.append(wood)
+    boxskins.append(wood)
 
     metal = pygame.Surface((tile_size - 8, tile_size - 8))
     metal.fill((145, 152, 164))
     for i in range(3, tile_size - 8, 7):
         pygame.draw.line(metal, (175, 182, 194), (i, 2), (i, tile_size - 10), 1)
     pygame.draw.rect(metal, (96, 102, 116), metal.get_rect(), 2)
-    box_materials.append(metal)
+    boxskins.append(metal)
 
     stone = pygame.Surface((tile_size - 8, tile_size - 8))
     stone.fill((120, 112, 102))
@@ -97,9 +97,9 @@ def build_textures(tile_size):
         y = (i * 11) % (tile_size - 10)
         pygame.draw.circle(stone, (102, 96, 88), (x + 3, y + 3), 2)
     pygame.draw.rect(stone, (84, 78, 72), stone.get_rect(), 2)
-    box_materials.append(stone)
+    boxskins.append(stone)
 
-    textures["boxes"] = box_materials
+    textures["boxes"] = boxskins
     return textures
 
 
@@ -120,50 +120,50 @@ def normalize_level(lines):
 
 
 def parse_level(raw_level):
-    walls = set()
-    floors = set()
-    targets = set()
+    wall = set()
+    flr = set()
+    targs = set()
     boxes = set()
-    player = None
+    p1 = None
 
     for y, row in enumerate(raw_level):
         for x, cell in enumerate(row):
             pos = (x, y)
             if cell == "#":
-                walls.add(pos)
+                wall.add(pos)
                 continue
 
-            floors.add(pos)
+            flr.add(pos)
             if cell in ".+*":
-                targets.add(pos)
+                targs.add(pos)
             if cell in "$*":
                 boxes.add(pos)
             if cell in "@+":
-                if player is not None:
-                    raise ValueError("Map can only contain one player start (@ or +).")
-                player = pos
+                if p1 is not None:
+                    raise ValueError("Map can only contain one p1 start (@ or +).")
+                p1 = pos
 
-    if player is None:
-        raise ValueError("Map must contain a player (@ or +).")
+    if p1 is None:
+        raise ValueError("Map must contain a p1 (@ or +).")
     if not boxes:
         raise ValueError("Map must contain at least one box ($ or *).")
-    if len(boxes) != len(targets):
-        raise ValueError("Number of boxes must match number of targets.")
+    if len(boxes) != len(targs):
+        raise ValueError("Number of boxes must match number of targs.")
 
-    return walls, floors, targets, boxes, player
+    return wall, flr, targs, boxes, p1
 
 
-def try_move(player, boxes, walls, floors, move):
+def try2move(p1, boxes, wall, flr, move):
     dx, dy = MOVE_TO_VEC[move]
-    next_pos = (player[0] + dx, player[1] + dy)
+    next_pos = (p1[0] + dx, p1[1] + dy)
 
-    if next_pos in walls or next_pos not in floors:
-        return player, boxes
+    if next_pos in wall or next_pos not in flr:
+        return p1, boxes
 
     if next_pos in boxes:
         beyond = (next_pos[0] + dx, next_pos[1] + dy)
-        if beyond in walls or beyond in boxes or beyond not in floors:
-            return player, boxes
+        if beyond in wall or beyond in boxes or beyond not in flr:
+            return p1, boxes
         new_boxes = set(boxes)
         new_boxes.remove(next_pos)
         new_boxes.add(beyond)
@@ -172,32 +172,32 @@ def try_move(player, boxes, walls, floors, move):
     return next_pos, boxes
 
 
-def try_move_with_materials(player, boxes, box_materials, walls, floors, move):
+def try2move_with_materials(p1, boxes, boxskins, wall, flr, move):
     dx, dy = MOVE_TO_VEC[move]
-    next_pos = (player[0] + dx, player[1] + dy)
+    next_pos = (p1[0] + dx, p1[1] + dy)
 
-    if next_pos in walls or next_pos not in floors:
-        return player, boxes, box_materials, False
+    if next_pos in wall or next_pos not in flr:
+        return p1, boxes, boxskins, False
 
     if next_pos in boxes:
         beyond = (next_pos[0] + dx, next_pos[1] + dy)
-        if beyond in walls or beyond in boxes or beyond not in floors:
-            return player, boxes, box_materials, False
+        if beyond in wall or beyond in boxes or beyond not in flr:
+            return p1, boxes, boxskins, False
         new_boxes = set(boxes)
         new_boxes.remove(next_pos)
         new_boxes.add(beyond)
-        new_materials = dict(box_materials)
+        new_materials = dict(boxskins)
         new_materials[beyond] = new_materials.pop(next_pos)
         return next_pos, new_boxes, new_materials, True
 
-    return next_pos, boxes, box_materials, next_pos != player
+    return next_pos, boxes, boxskins, next_pos != p1
 
 
-def map_from_file(path):
+def filemap(path):
     return normalize_level(Path(path).read_text(encoding="utf-8").splitlines())
 
 
-def create_map_file(path):
+def create_filemap(path):
     print("Create your map line-by-line. Use # . $ @ + * and spaces. Submit empty line to finish.")
     lines = []
     while True:
@@ -248,31 +248,31 @@ def draw_tile(screen, x, y, color):
     return rect
 
 
-def draw_scene(screen, font, level_size, walls, floors, targets, boxes, box_materials, player, status_lines, textures, won):
+def screendraw(screen, font, level_size, wall, flr, targs, boxes, boxskins, p1, statlines, textures, win):
     screen.fill(COLORS["bg"])
 
-    for x, y in floors:
+    for x, y in flr:
         screen.blit(textures["floor"], (x * TILE_SIZE, y * TILE_SIZE))
 
-    for x, y in walls:
-        variant = textures["walls"][(x * 73 + y * 37) % len(textures["walls"])]
+    for x, y in wall:
+        variant = textures["wall"][(x * 73 + y * 37) % len(textures["wall"])]
         rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
         screen.blit(variant, rect.topleft)
 
-    for x, y in targets:
+    for x, y in targs:
         center = (x * TILE_SIZE + TILE_SIZE // 2, y * TILE_SIZE + TILE_SIZE // 2)
         pygame.draw.circle(screen, COLORS["target"], center, TILE_SIZE // 6)
 
     for x, y in boxes:
         rect = pygame.Rect(x * TILE_SIZE + 4, y * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8)
-        material = textures["boxes"][box_materials[(x, y)]]
+        material = textures["boxes"][boxskins[(x, y)]]
         screen.blit(material, rect.topleft)
-        if (x, y) in targets:
+        if (x, y) in targs:
             pygame.draw.rect(screen, COLORS["box_on_target"], rect, width=3, border_radius=5)
         else:
             pygame.draw.rect(screen, COLORS["box_edge"], rect, width=2, border_radius=5)
 
-    px, py = player
+    px, py = p1
     pcenter = (px * TILE_SIZE + TILE_SIZE // 2, py * TILE_SIZE + TILE_SIZE // 2)
     pygame.draw.circle(screen, (36, 88, 132), (pcenter[0], pcenter[1] + 3), TILE_SIZE // 3)
     pygame.draw.circle(screen, (92, 184, 245), pcenter, TILE_SIZE // 3)
@@ -290,12 +290,12 @@ def draw_scene(screen, font, level_size, walls, floors, targets, boxes, box_mate
     )
 
     board_h = level_size[1] * TILE_SIZE
-    for i, line in enumerate(status_lines):
+    for i, line in enumerate(statlines):
         surf = font.render(line, True, COLORS["text"])
         screen.blit(surf, (10, board_h + 6 + i * 22))
 
     replay_rect = None
-    if won:
+    if win:
         replay_rect = pygame.Rect(level_size[0] * TILE_SIZE - 140, board_h + 10, 120, 28)
         pygame.draw.rect(screen, (74, 156, 92), replay_rect, border_radius=6)
         pygame.draw.rect(screen, (50, 120, 68), replay_rect, width=2, border_radius=6)
@@ -313,7 +313,7 @@ def main():
     args = parser.parse_args()
 
     if args.create_path:
-        create_map_file(args.create_path)
+        create_filemap(args.create_path)
         return
 
     packed_levels = load_level_pack(args.level_pack) if not args.map_path else []
@@ -321,26 +321,32 @@ def main():
 
     def get_level_map():
         if args.map_path:
-            return map_from_file(args.map_path)
+            return filemap(args.map_path)
         return packed_levels[current_level_index]
+
+    # pygame.init()
+    # pygame.display.set_caption("Sokoban")
+    # font = pygame.font.SysFont("arial", 18)
+    # clock = pygame.time.Clock()
+    # textures = wallkins(TILE_SIZE)
 
     pygame.init()
     pygame.display.set_caption("Sokoban")
     font = pygame.font.SysFont("arial", 18)
     clock = pygame.time.Clock()
-    textures = build_textures(TILE_SIZE)
+    textures = wallkins(TILE_SIZE)
 
     def reset_level(level_override=None):
-        nonlocal walls, floors, targets, initial_boxes, initial_player, boxes, box_materials
-        nonlocal initial_box_materials, player, moves, level_map, screen, move_history
+        nonlocal wall, flr, targs, initial_boxes, initial_p1, boxes, boxskins
+        nonlocal initial_boxskins, p1, moves, level_map, screen, move_history
         nonlocal replay_moves, replay_accumulator, replaying
         level_map = level_override if level_override is not None else get_level_map()
-        walls, floors, targets, initial_boxes, initial_player = parse_level(level_map)
+        wall, flr, targs, initial_boxes, initial_p1 = parse_level(level_map)
         boxes = set(initial_boxes)
         ordered_boxes = sorted(initial_boxes)
-        box_materials = {pos: i % len(textures["boxes"]) for i, pos in enumerate(ordered_boxes)}
-        initial_box_materials = dict(box_materials)
-        player = initial_player
+        boxskins = {pos: i % len(textures["boxes"]) for i, pos in enumerate(ordered_boxes)}
+        initial_boxskins = dict(boxskins)
+        p1 = initial_p1
         moves = 0
         move_history = []
         replay_moves = []
@@ -349,10 +355,10 @@ def main():
         board_w, board_h = len(level_map[0]), len(level_map)
         screen = pygame.display.set_mode((board_w * TILE_SIZE, board_h * TILE_SIZE + 74))
 
-    walls = floors = targets = initial_boxes = boxes = set()
-    box_materials = {}
-    initial_box_materials = {}
-    initial_player = player = (0, 0)
+    wall = flr = targs = initial_boxes = boxes = set()
+    boxskins = {}
+    initial_boxskins = {}
+    initial_p1 = p1 = (0, 0)
     moves = 0
     move_history = []
     replay_moves = []
@@ -365,8 +371,8 @@ def main():
     while True:
         board_w, board_h = len(level_map[0]), len(level_map)
         dt = clock.tick(FPS) / 1000.0
-        won = boxes == targets
-        replay_button = pygame.Rect(board_w * TILE_SIZE - 140, board_h * TILE_SIZE + 10, 120, 28) if won else None
+        win = boxes == targs
+        replay_button = pygame.Rect(board_w * TILE_SIZE - 140, board_h * TILE_SIZE + 10, 120, 28) if win else None
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -389,28 +395,28 @@ def main():
                     reset_level()
                     continue
 
-                if won or replaying:
+                if win or replaying:
                     continue
 
                 if event.key in KEY_TO_MOVE:
-                    new_player, new_boxes, new_materials, moved = try_move_with_materials(
-                        player,
+                    new_p1, new_boxes, new_materials, moved = try2move_with_materials(
+                        p1,
                         boxes,
-                        box_materials,
-                        walls,
-                        floors,
+                        boxskins,
+                        wall,
+                        flr,
                         KEY_TO_MOVE[event.key],
                     )
                     if moved:
                         moves += 1
                         move_history.append(KEY_TO_MOVE[event.key])
-                    player, boxes, box_materials = new_player, new_boxes, new_materials
+                    p1, boxes, boxskins = new_p1, new_boxes, new_materials
 
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and won and replay_button:
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and win and replay_button:
                 if replay_button.collidepoint(event.pos) and move_history:
                     boxes = set(initial_boxes)
-                    box_materials = dict(initial_box_materials)
-                    player = initial_player
+                    boxskins = dict(initial_boxskins)
+                    p1 = initial_p1
                     moves = 0
                     replay_moves = list(move_history)
                     replay_accumulator = 0.0
@@ -421,43 +427,43 @@ def main():
             while replay_accumulator >= 0.5 and replay_moves:
                 replay_accumulator -= 0.5
                 step = replay_moves.pop(0)
-                new_player, new_boxes, new_materials, moved = try_move_with_materials(
-                    player,
+                new_p1, new_boxes, new_materials, moved = try2move_with_materials(
+                    p1,
                     boxes,
-                    box_materials,
-                    walls,
-                    floors,
+                    boxskins,
+                    wall,
+                    flr,
                     step,
                 )
                 if moved:
                     moves += 1
-                player, boxes, box_materials = new_player, new_boxes, new_materials
+                p1, boxes, boxskins = new_p1, new_boxes, new_materials
             if not replay_moves:
                 replaying = False
 
         level_text = "Custom map" if args.map_path else f"Level {current_level_index + 1}/{len(packed_levels)}"
-        status_lines = [
+        statlines = [
             "Move: Arrowkeys/WASD | R to reset | [ or ] to switch levels | ESC to quit",
             f"{level_text} | Moves: {moves}",
         ]
-        if won:
-            status_lines[0] = "Damn u solved it! Click Replay to rewatch your run at 2 moves/sec"
+        if win:
+            statlines[0] = "Damn u solved it! Click Replay to rewatch your run at 2 moves/sec"
         elif replaying:
-            status_lines[0] = "Replaying your solution in progress"
+            statlines[0] = "Replaying your solution in progress"
 
-        draw_scene(
+        screendraw(
             screen,
             font,
             (board_w, board_h),
-            walls,
-            floors,
-            targets,
+            wall,
+            flr,
+            targs,
             boxes,
-            box_materials,
-            player,
-            status_lines,
+            boxskins,
+            p1,
+            statlines,
             textures,
-            won,
+            win,
         )
         pygame.display.flip()
 
